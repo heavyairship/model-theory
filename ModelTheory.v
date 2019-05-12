@@ -1,9 +1,10 @@
 Require Export Coq.Strings.String.
 Require Export List.
 Require Export Coq.Sets.Ensembles.
+Require Export Coq.Bool.Bool.
+Require Export Coq.Arith.EqNat.
 
-Notation "x :: l" := (cons x l)
-                     (at level 60, right associativity).
+Notation "x :: l" := (cons x l) (at level 60, right associativity).
 Notation "[ ]" := nil.
 Notation "[ x ; .. ; y ]" := (cons x .. (cons y nil) ..).
 
@@ -124,7 +125,7 @@ Fixpoint term_vars (t : term) := match t with
 end.
 
 Module term_vars_example.
-Definition t := FuncT (Func 1) (VarT (Var 1)::(VarT (Var 1))::nil).
+Definition t  := FuncT (Func 1) (VarT (Var 1)::(VarT (Var 1))::nil).
 Definition tv := term_vars t.
 Theorem TermVarsExample : In var tv (Var 1).
 Proof.
@@ -138,18 +139,18 @@ Qed.
 End term_vars_example.
 
 Fixpoint free_vars (phi : formula) := match phi with 
-| Equals t1 t2 => Union var (term_vars t1) (term_vars t2)
-| Relates _ l => fold_left (fun a x => Union var a (term_vars x)) l (Empty_set var)
-| Not psi => free_vars psi
-| Or theta psi => Union var (free_vars theta) (free_vars psi)
-| Forall v phi => Subtract var (free_vars phi) v
+| Equals t1 t2  => Union var (term_vars t1) (term_vars t2)
+| Relates _ l   => fold_left (fun a x => Union var a (term_vars x)) l (Empty_set var)
+| Not psi       => free_vars psi
+| Or theta psi  => Union var (free_vars theta) (free_vars psi)
+| Forall v psi  => Subtract var (free_vars psi) v
 end.
 
 Module free_vars_example.
-Definition v := VarT (Var 1).
-Definition t := FuncT (Func 1) (v::nil). 
-Definition phi := Forall (Var 1) (Equals t t).
-Definition fv := free_vars phi.
+Definition v    := VarT (Var 1).
+Definition t    := FuncT (Func 1) (v::nil). 
+Definition phi  := Forall (Var 1) (Equals t t).
+Definition fv   := free_vars phi.
 Theorem FreeVarsExample :  ~ (In var fv (Var 1)).
 Proof.
   unfold not.
@@ -165,3 +166,31 @@ Proof.
   apply In_singleton.
 Qed.
 
+
+Definition eq_var (v1 : var) (v2 : var) := match v1, v2 with
+| Var v1', Var v2' => beq_nat v1' v2'
+end.
+
+Fixpoint contains_var (l : list var) (v : var) := match l with 
+| [] => false
+| h::t => eq_var v h || contains_var t v
+end.
+
+Fixpoint remove_var (l : list var) (v : var) := match l with
+| [] => []
+| h::t => if eq_var v h then remove_var t v else h::(remove_var t v)
+end.
+
+Fixpoint subst_term (t_orig : term) (v : var) (t : term) := match t_orig with
+| VarT v    => t
+| ConstT c  => ConstT c
+| FuncT f l => FuncT f (fold_left (fun a x => (subst_term x v t)::a) l nil)
+end.
+
+Fixpoint subst (phi: formula) (v : var) (t : term) (free : list var) := match phi with
+| Equals t1 t2 => if (contains_var free v) then Equals (subst_term t1 v t) (subst_term t2 v t) else Equals t1 t2
+| Relates r l => if (contains_var free v) then Relates r (fold_left (fun a x => (subst_term x v t)::a) l nil) else Relates r l
+| Not psi => Not (subst psi v t free)
+| Or theta psi => Or (subst theta v t free) (subst psi v t free)
+| Forall v psi => Forall v (subst psi v t (remove_var free v))
+end.
