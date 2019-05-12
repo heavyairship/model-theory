@@ -1,20 +1,26 @@
 Require Export Coq.Strings.String.
+Require Export List.
+Require Export Coq.Sets.Ensembles.
+
+Notation "x :: l" := (cons x l)
+                     (at level 60, right associativity).
+Notation "[ ]" := nil.
+Notation "[ x ; .. ; y ]" := (cons x .. (cons y nil) ..).
 
 (* Symbols *)
 Inductive var : Type :=
-| Var : string -> var.
+| Var : nat -> var.
 Inductive func : Type :=
-| Func : string -> func.
+| Func : nat -> func.
 Inductive const : Type :=
-| Const : string -> const.
+| Const : nat -> const.
+
 
 (* Terms *)
-(* FixMe: does this need a type param? *)
 Inductive term : Type :=
 | VarT   : var -> term
 | ConstT : const -> term
-| FuncT  : func -> (list term) -> term. (*FixMe: how to define arg list as non-empty? 
-                                          FuncT w/ empty arg list is same as a constant.*)
+| FuncT  : func -> (list term) -> term.
 
 (* Formulas *)
 (* FixMe: does this need a type param? *)
@@ -111,48 +117,51 @@ Proof.
   assumption.
 Qed.
 
-(* Bound and free variables *)
-
-Inductive bound: var -> formula -> Prop :=
-|BoundForall (v: var) (psi phi : formula) : subformula (Forall v psi) phi -> bound v phi.
-Fixpoint boundFun (v : var) (phi : formula) := match phi with
-| Equals _ _ => False
-| Relates _ _ => False
-| Not psi => boundFun v psi
-| Or theta psi => boundFun v theta \/ boundFun v psi
-| Forall v' phi => v = v' \/ boundFun v phi
+Fixpoint term_vars (t : term) := match t with
+| VarT v    => Singleton var v
+| ConstT c  => Empty_set var
+| FuncT f l => fold_left (fun a x => Union var a (term_vars x)) l (Empty_set var) 
 end.
 
-Definition free (v : var) (phi : formula) := not (bound v phi).
-Definition freeFun (v : var) (phi : formula) := not (boundFun v phi).
-
-Example boundEx: bound (Var "x") (Forall (Var "x") (Equals (VarT (Var "x")) (VarT (Var "x")))).
+Module term_vars_example.
+Definition t := FuncT (Func 1) (VarT (Var 1)::(VarT (Var 1))::nil).
+Definition tv := term_vars t.
+Theorem TermVarsExample : In var tv (Var 1).
 Proof.
-  remember (Var "x") as v.
-  remember (Equals (VarT v) (VarT v)) as psi.
-  apply BoundForall with (psi := psi).
-  apply SubIden.
-  reflexivity.
+  unfold In.
+  unfold tv.
+  simpl.
+  apply Union_intror.
+  unfold In.
+  apply In_singleton.
 Qed.
+End term_vars_example.
 
-Example freeEx: free (Var "y") (Forall (Var "x") (Equals (VarT (Var "x")) (VarT (Var "x")))).
-Proof.
-  unfold free, not.
-  intros.
-  inversion H. subst.
-  inversion H0; subst.
-  - (*SubIden case *) 
-    discriminate H1.
-  - (*SubNot case *)
-    
-Admitted.
+Fixpoint free_vars (phi : formula) := match phi with 
+| Equals t1 t2 => Union var (term_vars t1) (term_vars t2)
+| Relates _ l => fold_left (fun a x => Union var a (term_vars x)) l (Empty_set var)
+| Not psi => free_vars psi
+| Or theta psi => Union var (free_vars theta) (free_vars psi)
+| Forall v phi => Subtract var (free_vars phi) v
+end.
 
-Example freeFunEx : freeFun (Var "y") (Forall (Var "x") (Equals (VarT (Var "x")) (VarT (Var "x")))).
+Module free_vars_example.
+Definition v := VarT (Var 1).
+Definition t := FuncT (Func 1) (v::nil). 
+Definition phi := Forall (Var 1) (Equals t t).
+Definition fv := free_vars phi.
+Theorem FreeVarsExample :  ~ (In var fv (Var 1)).
 Proof.
-  unfold freeFun, not.
+  unfold not.
   intros.
-  unfold boundFun in H.
+  unfold In in *.
+  unfold fv in *.
+  simpl in *.
+  unfold Subtract in *.
+  unfold Setminus in *.
+  unfold In in *.
   destruct H.
-  - discriminate H.
-  - assumption.
+  destruct H0.
+  apply In_singleton.
 Qed.
+
