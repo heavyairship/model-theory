@@ -164,7 +164,6 @@ Theorem thm1 : contains_var fv (Var 1) = false. Proof. reflexivity. Qed.
 Theorem thm2 : contains_var fv (Var 2) = true. Proof. reflexivity. Qed.
 End free_vars_example.
 
-(* Performs a substitution of a variable with a term *)
 Fixpoint subst_term (t_orig : term) (v : var) (t : term) := match t_orig with
 | VarT v    => t
 | ConstT c  => ConstT c
@@ -172,13 +171,15 @@ Fixpoint subst_term (t_orig : term) (v : var) (t : term) := match t_orig with
 end.
 
 Fixpoint subst_helper (phi: formula) (v : var) (t : term) (free : list var) := match phi with
-| Equals t1 t2 => if (contains_var free v) then Equals (subst_term t1 v t) (subst_term t2 v t) else Equals t1 t2
-| Relates r l => if (contains_var free v) then Relates r (fold_left (fun a x => (subst_term x v t)::a) l nil) else Relates r l
-| Not psi => Not (subst_helper psi v t free)
-| Or theta psi => Or (subst_helper theta v t free) (subst_helper psi v t free)
-| Forall v psi => Forall v (subst_helper psi v t (remove_var free v))
+| Equals t1 t2  => if (contains_var free v) then Equals (subst_term t1 v t) (subst_term t2 v t) else Equals t1 t2
+| Relates r l   => if (contains_var free v) then Relates r (fold_left (fun a x => (subst_term x v t)::a) l nil) else Relates r l
+| Not psi       => Not (subst_helper psi v t free)
+| Or theta psi  => Or (subst_helper theta v t free) (subst_helper psi v t free)
+| Forall v' psi  => Forall v' (subst_helper psi v t (remove_var free v'))
 end.
 
+(* Performs a substitution of a variable with a term, only free occurrences should be substituted *)
+(* Note: assumes all the variables in t are substitutable in phi *)
 Definition subst (phi: formula) (v : var) (t : term) := subst_helper phi v t (free_vars phi).
 
 Module subst_example.
