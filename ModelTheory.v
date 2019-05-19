@@ -301,3 +301,51 @@ End valid_formula_example.
 (******************************************************************************************)
 (* Models *)
 (******************************************************************************************)
+
+(* Note that it isn't strictly necesary to tie interpretation functions to a language, since
+interpretation functions for constants/functions/relations can simply map all symbols 
+not in a given language to a single value. For example, if a language has constants
+{Const 1, Const 2}, an interpretation function can map Const 1 to v1, Const 2 to v2, 
+and all other constants to v1. Similar reasoning applies to functions and relations. *)
+
+(* FixMe: how to deal with function/relation airities? *)
+(* FixMe: how to tie interp functions to lang? *)
+
+Inductive constInterp (A : Type) :=
+| ConstInterp : (const -> A) -> constInterp A.
+
+Inductive funcInterp (A : Type) :=
+| FuncInterp : (func -> (list A) -> A) -> funcInterp A.
+
+Inductive relInterp (A : Type) :=
+| RelInterp : (rel -> (list A) -> Prop) -> relInterp A.
+
+Inductive interpretation (A : Type) :=
+| Interpretation : (constInterp A) -> (funcInterp A) -> (relInterp A) -> interpretation A.
+
+Inductive model (A : Type) := 
+| Model : lang -> (interpretation A) -> model A.
+
+Module model_example.
+Definition zero := Const 0.
+Definition plus := Func 0.
+Definition times := Func 1.
+Definition simpleLang := Lang [zero] [] [plus].
+Definition cInterp (c : const) := if eq_const c zero then 0 else 0.
+Fixpoint fInterp (f : func) (args : list nat) :=
+  if (eq_func f plus) then 
+    match args with 
+    | [] => 0
+    | h::t => h + (fInterp f t)
+    end
+  else
+    match args with
+    | [] => 0
+    | h::t => h * (fInterp f t)
+    end
+.
+Definition rInterp (r : rel) (args : list nat) := True.
+Definition interp := 
+  Interpretation nat (ConstInterp nat cInterp) (FuncInterp nat fInterp) (RelInterp nat rInterp).
+Definition myModel := Model nat simpleLang interp.
+End model_example.
