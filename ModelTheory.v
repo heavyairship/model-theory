@@ -1,10 +1,23 @@
 Require Export Coq.Strings.String.
-Require Export List.
 Require Export Coq.Bool.Bool.
 Require Export Coq.Arith.EqNat.
+Require Export List.
 Notation "x :: l" := (cons x l) (at level 60, right associativity).
 Notation "[ ]" := nil.
 Notation "[ x ; .. ; y ]" := (cons x .. (cons y nil) ..).
+
+(******************************************************************************************)
+(* Args *)
+(******************************************************************************************)
+
+(* Inductive type idea and notation taken from
+ http://www.cs.cornell.edu/courses/cs6115/2017fa/notes/lecture8.html *)
+Inductive args (T : Type) : nat -> Type :=
+| nilA : args T 0
+| consA : forall n, T -> args T n -> args T (S n).
+Local Notation "[| |]" := (@nilA _).
+Local Notation "[| x |]" := (@consA _ 1 x nilA).
+Local Notation "[| x ; .. ; y |]" := (@consA _ _ x (.. (@consA _ _ y (@nilA _)) ..)).
 
 (******************************************************************************************)
 (* Symbols *)
@@ -13,28 +26,46 @@ Notation "[ x ; .. ; y ]" := (cons x .. (cons y nil) ..).
 Inductive var : Type :=
 | Var : nat -> var.
 Inductive func : Type :=
-| Func : nat -> func.
+| Func : nat -> nat -> func.
 Inductive const : Type :=
 | Const : nat -> const.
 Inductive rel : Type :=
-| Rel : nat -> rel.
+| Rel : nat -> nat -> rel.
 
 (******************************************************************************************)
 (* Terms *)
 (******************************************************************************************)
 
+Definition arity_match_func (f : func) (arity : nat) := match f with
+| Func _ ar => arity = ar
+end.
+
 Inductive term : Type :=
 | VarT   : var -> term
 | ConstT : const -> term
-| FuncT  : func -> (list term) -> term.
+| FuncT  : forall (f : func) (arity : nat) (arg : args term arity), 
+            (arity_match_func f arity) -> term.
+
+Module func_inst_example.
+Definition v0 := VarT (Var 0).
+Definition myArgs := [| v0; v0 |].
+Definition myFuncSym := Func 0 2.
+Definition myProof : (arity_match_func myFuncSym 2). Proof. reflexivity. Qed. 
+Definition myFunc := FuncT myFuncSym 2 myArgs myProof.
+End func_inst_example.
 
 (******************************************************************************************)
 (* Formulas *)
 (******************************************************************************************)
 
+Definition arity_match_rel (r : rel) (arity : nat) := match r with
+| Rel _ ar => arity = ar
+end.
+
 Inductive formula : Type := 
 | Equals  : term -> term -> formula
-| Relates : rel -> (list term) -> formula
+| Relates : forall (r : rel) (arity : nat) (arg : args term arity), 
+            (arity_match_rel r arity) -> formula
 | Not     : formula -> formula
 | Or      : formula -> formula -> formula
 | Forall  : var -> formula -> formula.
@@ -156,7 +187,7 @@ Fixpoint contains_const (l : list const) (c : const) := match l with
 end.
 
 Definition eq_func (f1 : func) (f2 : func) := match f1, f2 with
-| Func f1', Func f2' => beq_nat f1' f2'
+| Func f1' _, Func f2' _ => beq_nat f1' f2'
 end.
 
 Fixpoint contains_func (l : list func) (f : func) := match l with
@@ -165,7 +196,7 @@ Fixpoint contains_func (l : list func) (f : func) := match l with
 end.
 
 Definition eq_rel (r1 : rel) (r2 : rel) := match r1, r2 with
-| Rel r1', Rel r2' => beq_nat r1' r2'
+| Rel r1' _, Rel r2' _ => beq_nat r1' r2'
 end.
 
 Fixpoint contains_rel (l : list rel) (r : rel) := match l with
@@ -177,19 +208,31 @@ end.
 (* Free variables *)
 (******************************************************************************************)
 
+Fixpoint args_to_list (n : nat) (a : args term n) := match a with
+| nilA _ => []
+| consA _ n' h t  => h::(args_to_list n' t)
+end.
+
 Fixpoint term_vars (t : term) := match t with
 | VarT v    => v::[]
 | ConstT c  => []
-| FuncT f l => fold_left (fun a x => a++(term_vars x)) l []
+| FuncT f n a p => match a with
+  | nilA _ => []
+  | consA _ n' head tail => (term_vars head) :: term_vars (FuncT f n tail p)
+  end
+end.
+
+
+fold_left (fun acc x => acc++(term_vars x)) (args_to_list n a) []
 end.
 
 Module term_vars_example.
-Definition t  := FuncT (Func 1) (VarT (Var 1)::(VarT (Var 1))::nil).
+Definition t  := FuncT (Func 1 1) (VarT (Var 1)::(VarT (Var 1))::nil).
 Definition tv := term_vars t.
 Theorem thm : contains_var tv (Var 1) = true. Proof. reflexivity. Qed.
 End term_vars_example.
 
-Definition atomic_func (phi : formula) := match phi with
+Definition is_atomic (phi : formula) := match phi with
 | Equals _ _ => true
 | Relates _ _ => true
 | _ => false
@@ -206,7 +249,7 @@ end.
 Module free_vars_example.
 Definition v1   := VarT (Var 1).
 Definition v2   := VarT (Var 2).
-Definition t    := FuncT (Func 1) (v1::nil). 
+Definition t    := FuncT (Func 1 1) (v1::nil). 
 Definition phi  := Or (Equals v2 v2) (Forall (Var 1) (Equals t t)).
 Definition fv   := free_vars phi.
 Theorem thm1 : contains_var fv (Var 1) = false. Proof. reflexivity. Qed.
@@ -244,9 +287,9 @@ Definition v1       := Var 1.
 Definition v1T      := VarT v1.
 Definition v2T      := VarT (Var 2).
 Definition cT       := ConstT (Const 1).
-Definition phi      := Or (Equals v1T v1T) (Forall v1 (Relates (Rel 1) [v1T; v2T])).
+Definition phi      := Or (Equals v1T v1T) (Forall v1 (Relates (Rel 1 1) [v1T; v2T])).
 Definition phi_sub  := subst phi v1 cT.
-Definition expected := Or (Equals cT cT) (Forall v1 (Relates (Rel 1) [v1T; v2T])).
+Definition expected := Or (Equals cT cT) (Forall v1 (Relates (Rel 1 1) [v1T; v2T])).
 Theorem thm1 : phi_sub = expected. Proof. reflexivity. Qed.
 End subst_example.
 
@@ -254,7 +297,7 @@ End subst_example.
 (* Languages *)
 (******************************************************************************************)
 
-Inductive lang :=
+Inductive lang : Type :=
 | Lang : list const -> list rel -> list func -> lang.
 
 Definition lang_const (l : lang) := match l with
@@ -290,11 +333,11 @@ Definition c1 := ConstT (Const 1).
 Definition c2 := ConstT (Const 2).
 Definition c3 := ConstT (Const 3).
 Definition v1 := Var 1.
-Definition r1 := (Rel 1).
+Definition r1 := (Rel 1 (Arity 2)).
 Definition phi := Or (Equals c1 c2) (Forall v1 (Relates r1 [VarT v1; c3])).
-Definition l := Lang [Const 1; Const 2; Const 3]  [Rel 1] [].
+Definition l := Lang [Const 1; Const 2; Const 3]  [Rel 1 (Arity 2)] [].
 Theorem thm1 : (valid_formula l phi) = true. Proof. reflexivity. Qed.
-Definition l' := Lang [Const 1; Const 2] [Rel 1] [].
+Definition l' := Lang [Const 1; Const 2] [Rel 1 (Arity 2)] [].
 Theorem thm2: (valid_formula l' phi) = false. Proof. reflexivity. Qed.
 End valid_formula_example.
 
@@ -311,25 +354,25 @@ and all other constants to v1. Similar reasoning applies to functions and relati
 (* FixMe: how to deal with function/relation airities? *)
 (* FixMe: how to tie interp functions to lang? *)
 
-Inductive constInterp (A : Type) :=
+Inductive constInterp (A : Type) : Type :=
 | ConstInterp : (const -> A) -> constInterp A.
 
-Inductive funcInterp (A : Type) :=
+Inductive funcInterp (A : Type) : Type :=
 | FuncInterp : (func -> (list A) -> A) -> funcInterp A.
 
-Inductive relInterp (A : Type) :=
+Inductive relInterp (A : Type) : Type :=
 | RelInterp : (rel -> (list A) -> Prop) -> relInterp A.
 
-Inductive interpretation (A : Type) :=
+Inductive interpretation (A : Type) : Type :=
 | Interpretation : (constInterp A) -> (funcInterp A) -> (relInterp A) -> interpretation A.
 
-Inductive model (A : Type) := 
+Inductive model (A : Type) : Type := 
 | Model : lang -> (interpretation A) -> model A.
 
 Module model_example.
 Definition zero := Const 0.
-Definition plus := Func 0.
-Definition times := Func 1.
+Definition plus := Func 0 2).
+Definition times := Func 1 2).
 Definition simpleLang := Lang [zero] [] [plus].
 Definition cInterp (c : const) := if eq_const c zero then 0 else 0.
 Fixpoint fInterp (f : func) (args : list nat) :=
