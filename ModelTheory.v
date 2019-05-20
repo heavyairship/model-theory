@@ -208,48 +208,57 @@ end.
 (* Free variables *)
 (******************************************************************************************)
 
+Inductive termList : Type :=
+| VarTList   : var -> termList
+| ConstTList : const -> termList
+| FuncTList  : func -> (list termList ) -> termList.
+
+Fixpoint term_to_termlist (t : term) := 
+
+let _args_to_list := (fix _args_to_list (n : nat) (a : args term n) := match a with
+| nilA _ => []
+| consA _ n' h t  => (term_to_termlist h)::(_args_to_list n' t)
+end) in
+
+match t with
+| VarT v        => VarTList v
+| ConstT c      => ConstTList c
+| FuncT f n a _ => FuncTList f (_args_to_list n a) 
+end.
+
+Fixpoint term_vars_helper (t : termList) := match t with
+| VarTList v    => v::[]
+| ConstTList c  => []
+| FuncTList f l => fold_left (fun acc x => acc++(term_vars_helper x)) l []
+end.
+
+Definition term_vars (t : term) := term_vars_helper (term_to_termlist t).
+
 Fixpoint args_to_list (n : nat) (a : args term n) := match a with
 | nilA _ => []
-| consA _ n' h t  => h::(args_to_list n' t)
-end.
-
-Fixpoint term_vars (t : term) := match t with
-| VarT v    => v::[]
-| ConstT c  => []
-| FuncT f n a p => match a with
-  | nilA _ => []
-  | consA _ n' head tail => (term_vars head) :: term_vars (FuncT f n tail p)
-  end
-end.
-
-
-fold_left (fun acc x => acc++(term_vars x)) (args_to_list n a) []
+| consA _ n' h t => (term_to_termlist h)::(args_to_list n' t)
 end.
 
 Module term_vars_example.
-Definition t  := FuncT (Func 1 1) (VarT (Var 1)::(VarT (Var 1))::nil).
+Theorem am : arity_match_func (Func 1 2) 2. Proof. reflexivity. Qed.
+Definition t  := FuncT (Func 1 2) 2 [|VarT (Var 1); VarT (Var 1)|] am.
 Definition tv := term_vars t.
 Theorem thm : contains_var tv (Var 1) = true. Proof. reflexivity. Qed.
 End term_vars_example.
 
-Definition is_atomic (phi : formula) := match phi with
-| Equals _ _ => true
-| Relates _ _ => true
-| _ => false
-end.
-
 Fixpoint free_vars (phi : formula) := match phi with 
-| Equals t1 t2  => (term_vars t1)++(term_vars t2)
-| Relates _ l   => fold_left (fun a x => a++(term_vars x)) l []
-| Not psi       => free_vars psi
-| Or theta psi  => (free_vars theta)++(free_vars psi)
-| Forall v psi  => remove_var (free_vars psi) v
+| Equals t1 t2      => (term_vars t1)++(term_vars t2)
+| Relates r n a _   => fold_left (fun a x => a++(term_vars_helper x)) (args_to_list n a) []
+| Not psi           => free_vars psi
+| Or theta psi      => (free_vars theta)++(free_vars psi)
+| Forall v psi      => remove_var (free_vars psi) v
 end.
 
 Module free_vars_example.
 Definition v1   := VarT (Var 1).
 Definition v2   := VarT (Var 2).
-Definition t    := FuncT (Func 1 1) (v1::nil). 
+Theorem am : arity_match_func (Func 1 1) 1. Proof. reflexivity. Qed.
+Definition t    := FuncT (Func 1 1) 1 [|v1|] am.
 Definition phi  := Or (Equals v2 v2) (Forall (Var 1) (Equals t t)).
 Definition fv   := free_vars phi.
 Theorem thm1 : contains_var fv (Var 1) = false. Proof. reflexivity. Qed.
