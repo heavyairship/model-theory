@@ -236,7 +236,7 @@ Definition term_vars (t : term) := term_vars_helper (term_to_termlist t).
 
 Fixpoint args_to_list (n : nat) (a : args term n) := match a with
 | nilA _ => []
-| consA _ n' h t => (term_to_termlist h)::(args_to_list n' t)
+| consA _ n' h t' => (term_to_termlist h)::(args_to_list n' t')
 end.
 
 Module term_vars_example.
@@ -269,24 +269,44 @@ End free_vars_example.
 (* Substitution *)
 (******************************************************************************************)
 
-Fixpoint subst_term (t_orig : term) (v : var) (t : term) := match t_orig with
+Definition x := [|1; 2; 3|].
+Check x.
+
+Definition x' := consA nat 3 1 x.
+Check x.
+
+Fixpoint subst_term (t_orig : term) (v : var) (t : term) := 
+let subst_term_args := (fix subst_term_args (n : nat) (a : args term n) := match a with
+| nilA _ => nilA _ 
+| consA _ n' h t' => consA _ n' (subst_term h v t) (subst_term_args n' t')
+end
+) in
+
+match t_orig with
 | VarT v    => t
 | ConstT c  => ConstT c
-| FuncT f l => FuncT f (fold_left (fun a x => (subst_term x v t)::a) l nil)
+| FuncT f n a p => FuncT f n (subst_term_args n a) p
 end.
 
-Fixpoint subst_helper (phi: formula) (v : var) (t : term) (free : list var) := match phi with
-| Equals t1 t2  =>  if (contains_var free v) then 
-                      Equals (subst_term t1 v t) (subst_term t2 v t) 
-                    else 
-                      Equals t1 t2
-| Relates r l   =>  if (contains_var free v) then 
-                      Relates r (fold_left (fun a x => (subst_term x v t)::a) l nil) 
-                    else 
-                      Relates r l
-| Not psi       =>  Not (subst_helper psi v t free)
-| Or theta psi  =>  Or (subst_helper theta v t free) (subst_helper psi v t free)
-| Forall v' psi => Forall v' (subst_helper psi v t (remove_var free v'))
+Fixpoint subst_helper (phi: formula) (v : var) (t : term) (free : list var) := 
+let subst_term_args := (fix subst_term_args (n : nat) (a : args term n) := match a with
+| nilA _ => nilA _
+| consA _ n' h t' => consA  _ n' (subst_term h v t) (subst_term_args n' t')
+end
+) in
+
+match phi with
+| Equals t1 t2    =>  if (contains_var free v) then 
+                        Equals (subst_term t1 v t) (subst_term t2 v t) 
+                      else 
+                        Equals t1 t2
+| Relates r n a p =>  if (contains_var free v) then 
+                        Relates r n (subst_term_args n a) p
+                      else 
+                        Relates r n a p
+| Not psi         =>  Not (subst_helper psi v t free)
+| Or theta psi    =>  Or (subst_helper theta v t free) (subst_helper psi v t free)
+| Forall v' psi   => Forall v' (subst_helper psi v t (remove_var free v'))
 end.
 
 Definition subst (phi: formula) (v : var) (t : term) := subst_helper phi v t (free_vars phi).
@@ -296,9 +316,10 @@ Definition v1       := Var 1.
 Definition v1T      := VarT v1.
 Definition v2T      := VarT (Var 2).
 Definition cT       := ConstT (Const 1).
-Definition phi      := Or (Equals v1T v1T) (Forall v1 (Relates (Rel 1 1) [v1T; v2T])).
+Theorem am : arity_match_rel (Rel 1 2) 2. Proof. reflexivity. Qed.
+Definition phi      := Or (Equals v1T v1T) (Forall v1 (Relates (Rel 1 2) 2 [|v1T; v2T|] am)).
 Definition phi_sub  := subst phi v1 cT.
-Definition expected := Or (Equals cT cT) (Forall v1 (Relates (Rel 1 1) [v1T; v2T])).
+Definition expected := Or (Equals cT cT) (Forall v1 (Relates (Rel 1 2) 2 [|v1T; v2T|] am)).
 Theorem thm1 : phi_sub = expected. Proof. reflexivity. Qed.
 End subst_example.
 
